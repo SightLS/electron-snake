@@ -1,0 +1,130 @@
+/* Темная тема */
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #121212;
+    color: #e0e0e0;
+}
+
+.game-container {
+    text-align: center;
+    background-color: #1e1e1e;
+    padding: 20px 30px;
+    border-radius: 15px;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+    width: 450px;
+}
+
+h1 {
+    color: #00e5ff;
+    text-shadow: 0 0 5px #00e5ff;
+}
+
+canvas {
+    border: none;
+    background: radial-gradient(circle at center, #0d0d0d, #121212);
+    margin: 20px 0;
+    border-radius: 20px;
+    box-shadow:
+        0 0 10px rgba(0, 255, 255, 0.5),
+        inset 0 0 20px rgba(0, 255, 255, 0.3);
+    image-rendering: auto;
+}
+
+.controls {
+    margin-top: 10px;
+}
+
+button {
+    padding: 10px 22px;
+    margin: 0 5px;
+    background: linear-gradient(45deg, #ff004f, #ff9500, #00ff95, #004dff);
+    background-size: 300% 300%;
+    animation: rainbowButton 6s ease infinite;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 16px;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+    transition: transform 0.2s ease;
+}
+
+button:hover {
+    transform: scale(1.05);
+    background-position: 100% 0;
+}
+
+@keyframes rainbowButton {
+    0%{background-position:0% 50%;}
+    50%{background-position:100% 50%;}
+    100%{background-position:0% 50%;}
+}
+
+.score {
+    font-size: 18px;
+    margin-bottom: 10px;
+    color: #00ffff;
+    text-shadow: 0 0 5px #00ffff;
+}
+
+.speed-control label {
+    color: #00ffff;
+    font-weight: 600;
+}
+
+.speed-control select {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: none;
+    background-color: #222;
+    color: #0ff;
+    font-weight: bold;
+    box-shadow: 0 0 5px #00ffff;
+    cursor: pointer;
+}
+
+.highscores h2 {
+    color: #0ff;
+    text-shadow: 0 0 6px #0ff;
+}
+
+.highscores ul {
+    list-style: none;
+    padding: 0;
+    max-height: 140px;
+    overflow-y: auto;
+    color: #ccc;
+    font-weight: 600;
+}
+
+#nameModal {
+    background: #222;
+    border-color: #00ffff;
+    color: #0ff;
+}
+
+#modalOverlay {
+    background: rgba(0, 255, 255, 0.15);
+}
+
+#nameModal input[type="text"] {
+    background-color: #111;
+    color: #0ff;
+    border: 1px solid #00ffff;
+    border-radius: 8px;
+}
+
+#nameModal button {
+    background-color: #00ffff;
+    color: #121212;
+    font-weight: 700;
+}
+
+#nameModal button:hover {
+    background-color: #00e5ff;
+}
