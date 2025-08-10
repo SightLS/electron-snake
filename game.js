@@ -1,40 +1,42 @@
 const { ipcRenderer } = require('electron');
-const fs = require('fs');
-const path = require('path');
 
-// === ЛОГИРОВАНИЕ ===
-const logFilePath = path.join(__dirname, 'snake_debug.log');
-function logToFile(...args) {
-    const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-    const line = `[${new Date().toISOString()}] ${msg}\n`;
-    try {
-        fs.appendFileSync(logFilePath, line, 'utf8');
-    } catch (err) {}
-}
-// ===================
-
+// Берём канвас. Это наше поле боя.
 const canvas = document.getElementById('gameCanvas');
+// Берём 2D, потому что 3D тут нафиг не надо
 const ctx = canvas.getContext('2d');
 
+// Вытаскиваем интерфейс, чтобы потом магически менять
 const scoreElement = document.getElementById('score');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
 const speedSelector = document.getElementById('speedSelector');
 const highscoreList = document.getElementById('highscoreList');
 
+// Размер клетки. Если хочешь поменять поле — начнётся ад.
 const gridSize = 20;
+// Сколько клеток помещается в ширину. Магия деления.
 const tileCount = Math.floor(canvas.width / gridSize);
 
+// Змейка в начале как спичка — одна клетка
 let snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
+// Кусок еды, пока что один, пока не проглотили
 let food = { x: 5, y: 5 };
+// Куда сейчас ползём
 let direction = { x: 0, y: 0 };
+// Куда захотим ползти после нажатия кнопки
 let nextDirection = { x: 0, y: 0 };
+// Счёт, который мы набрали (или не набрали)
 let score = 0;
+// Флаг — идёт игра или мы отдыхаем
 let isGameRunning = false;
+// Чтобы змейка переливалась, будем крутить радужный круг
 let hue = 0;
+// Плавное движение головы — да, я заморочился
 let headPos = { x: snake[0].posX, y: snake[0].posY };
+// Время прошлого кадра, чтобы знать, сколько прошло
 let lastTime = 0;
 
+// Рисуем прямоугольник с закруглениями. Можно и без этого, но будет некрасиво.
 function roundRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -49,6 +51,8 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
+// Показываем модальное окно, где игрок вводит своё имя.
+// Да, оно блокирует игру, потому что так проще.
 function showNamePrompt() {
     return new Promise((resolve) => {
         const modal = document.getElementById('nameModal');
@@ -93,6 +97,7 @@ function showNamePrompt() {
     });
 }
 
+// Рисуем змейку. Да, с плавностью, потому что я не из каменного века.
 function drawSnakeSmooth() {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -105,6 +110,7 @@ function drawSnakeSmooth() {
     }
 }
 
+// Еда. Просто красный шарик с тенью.
 function drawFood() {
     const centerX = food.x * gridSize + gridSize / 2;
     const centerY = food.y * gridSize + gridSize / 2;
@@ -119,25 +125,21 @@ function drawFood() {
     ctx.restore();
 }
 
-logToFile(`[DEBUG] tileCount=${tileCount} gridSize=${gridSize}`);
-
+// Проверка на врезание. Если да — гейм овер и слёзы.
 function checkCollision(newX, newY, ignoreTail = false) {
     if (newX < 0 || newX >= tileCount || newY < 0 || newY >= tileCount) {
-        logToFile(`[COLLISION BORDER] X=${newX}, Y=${newY}`);
         return true;
     }
     for (let i = 10; i < snake.length; i++) {
         if (ignoreTail && i === snake.length - 1) continue;
         if (snake[i].x === newX && snake[i].y === newY) {
-            logToFile(
-                `[COLLISION BODY] segmentIndex=${i}, segX=${snake[i].x}, segY=${snake[i].y}, headX=${newX}, headY=${newY}`
-            );
             return true;
         }
     }
     return false;
 }
 
+// Конец игры. Спрашиваем имя, сохраняем в рекорды.
 async function gameOver() {
     isGameRunning = false;
     const name = await showNamePrompt();
@@ -147,8 +149,8 @@ async function gameOver() {
     }
 }
 
+// Ставим еду в случайное место, но не на змейку (ну мы же не звери).
 function generateFood() {
-    // Генерируем новую еду с учётом визуальных позиций (округлённых) и логических x/y
     let newFood;
     let attempts = 0;
     do {
@@ -157,10 +159,9 @@ function generateFood() {
             y: Math.floor(Math.random() * tileCount)
         };
         attempts++;
-        if (attempts > 500) break; // safety
+        if (attempts > 500) break; // чтобы не зависнуть навсегда
     } while (
         snake.some(segment => {
-            // сравниваем по визуальным позициям (округлённым)
             const gx = Math.round(segment.posX / gridSize);
             const gy = Math.round(segment.posY / gridSize);
             return gx === newFood.x && gy === newFood.y;
@@ -169,6 +170,7 @@ function generateFood() {
     food = newFood;
 }
 
+// Обновляем список рекордов. Ну это понятно.
 function updateHighscoreList(highscores) {
     highscoreList.innerHTML = '';
     highscores.slice(0, 5).forEach((entry, index) => {
@@ -178,6 +180,7 @@ function updateHighscoreList(highscores) {
     });
 }
 
+// Сброс в дефолтное состояние. Всё по-новой.
 function resetGame() {
     isGameRunning = false;
     snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
@@ -191,6 +194,7 @@ function resetGame() {
     drawFood();
 }
 
+// Запуск. Тут всё начинается.
 function startGame() {
     if (isGameRunning) return;
     snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
@@ -205,6 +209,7 @@ function startGame() {
     requestAnimationFrame(gameLoop);
 }
 
+// Главный цикл. Тут вся магия.
 function gameLoop(time) {
     if (!isGameRunning) return;
     const deltaTime = time - lastTime;
@@ -223,7 +228,6 @@ function gameLoop(time) {
         const distToNextCell = Math.sqrt(distX * distX + distY * distY);
 
         if (moveAmount >= distToNextCell) {
-            // Доехали до следующей клетки визуально
             headPos.x = Math.round((snake[0].x + direction.x) * gridSize);
             headPos.y = Math.round((snake[0].y + direction.y) * gridSize);
 
@@ -231,29 +235,22 @@ function gameLoop(time) {
             const newY = snake[0].y + direction.y;
             const eating = (newX === food.x && newY === food.y);
 
-            // Проверка границ
             if (newX < 0 || newX >= tileCount || newY < 0 || newY >= tileCount) {
-                logToFile(`[GAME OVER - BORDER] newX=${newX}, newY=${newY}`);
                 gameOver();
                 return;
             }
 
-            // Проверка столкновения по визуальным позициям (округлённым pos)
             for (let i = 10; i < snake.length; i++) {
-                if (!eating && i === snake.length - 1) continue; // ignore tail если не едим
+                if (!eating && i === snake.length - 1) continue;
                 const seg = snake[i];
                 const segGX = Math.round(seg.posX / gridSize);
                 const segGY = Math.round(seg.posY / gridSize);
                 if (segGX === newX && segGY === newY) {
-                    logToFile(
-                        `[GAME OVER - BODY] segmentIndex=${i}, segGX=${segGX}, segGY=${segGY}, headGX=${newX}, headGY=${newY}`
-                    );
                     gameOver();
                     return;
                 }
             }
 
-            // Добавляем новый сегмент головы (логические координаты в целую клетку, визуальные — позиция клетки)
             snake.unshift({ x: newX, y: newY, posX: newX * gridSize, posY: newY * gridSize });
 
             if (eating) {
@@ -264,22 +261,18 @@ function gameLoop(time) {
                 snake.pop();
             }
 
-            // Применяем queued direction — так управление остаётся отзывчивым
             direction = nextDirection;
             moveAmount -= distToNextCell;
         } else {
-            // Плавно двигаем голову по пикселям (визуальная анимация)
             headPos.x += direction.x * moveAmount;
             headPos.y += direction.y * moveAmount;
             moveAmount = 0;
         }
     }
 
-    // Обновляем визуальную позицию головы
     snake[0].posX = headPos.x;
     snake[0].posY = headPos.y;
 
-    // Плавное "догоняние" для остальных сегментов (как было)
     const followSpeed = 0.2;
     for (let i = 1; i < snake.length; i++) {
         const prev = snake[i - 1];
@@ -288,8 +281,6 @@ function gameLoop(time) {
         curr.posY += (prev.posY - curr.posY) * followSpeed;
     }
 
-    // Синхронизация логических координат: только для хвоста и сегментов.
-    // Голова уже имеет точные x/y (мы unshift её при достижении новой клетки).
     for (let i = 1; i < snake.length; i++) {
         snake[i].x = Math.round(snake[i].posX / gridSize);
         snake[i].y = Math.round(snake[i].posY / gridSize);
@@ -302,6 +293,7 @@ function gameLoop(time) {
     requestAnimationFrame(gameLoop);
 }
 
+// Управление. Клавиши-стрелки или WASD, для эстетов.
 document.addEventListener('keydown', (e) => {
     const code = e.code;
     const isUp = code === 'ArrowUp' || code === 'KeyW';
@@ -310,7 +302,6 @@ document.addEventListener('keydown', (e) => {
     const isRight = code === 'ArrowRight' || code === 'KeyD';
     if (!isUp && !isDown && !isLeft && !isRight) return;
 
-    // Если игра не запущена — устанавливаем направление и стартуем
     if (!isGameRunning) {
         if (isUp) nextDirection = { x: 0, y: -1 };
         else if (isDown) nextDirection = { x: 0, y: 1 };
@@ -320,16 +311,17 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Нормальное управление: запрещаем разворот на 180 градусов по оси
     if (isUp && direction.y === 0) nextDirection = { x: 0, y: -1 };
     else if (isDown && direction.y === 0) nextDirection = { x: 0, y: 1 };
     else if (isLeft && direction.x === 0) nextDirection = { x: -1, y: 0 };
     else if (isRight && direction.x === 0) nextDirection = { x: 1, y: 0 };
 });
 
+// Кнопки в интерфейсе, для тех кто мышкой
 startBtn.addEventListener('click', startGame);
 restartBtn.addEventListener('click', resetGame);
 
+// Когда всё загрузилось — подгружаем рекорды и ждём
 window.onload = async () => {
     const highscores = await ipcRenderer.invoke('get-highscores');
     updateHighscoreList(highscores);
