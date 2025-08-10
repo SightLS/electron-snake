@@ -23,7 +23,7 @@ const speedSelector = document.getElementById('speedSelector');
 const highscoreList = document.getElementById('highscoreList');
 
 const gridSize = 20;
-const tileCount = canvas.width / gridSize;
+const tileCount = Math.floor(canvas.width / gridSize);
 
 let snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
 let food = { x: 5, y: 5 };
@@ -99,15 +99,9 @@ function drawSnakeSmooth() {
     for (let i = 0; i < snake.length; i++) {
         const segment = snake[i];
         const colorHue = (hue + i * 30) % 360;
-
-        // Отрисовка визуальной позиции (плавной)
         ctx.fillStyle = `hsl(${colorHue}, 100%, 50%)`;
         roundRect(ctx, segment.posX, segment.posY, gridSize, gridSize, gridSize / 2);
         ctx.fill();
-
-        // Отрисовка фактической позиции (белый полупрозрачный квадрат)
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
     }
 }
 
@@ -154,13 +148,24 @@ async function gameOver() {
 }
 
 function generateFood() {
+    // Генерируем новую еду с учётом визуальных позиций (округлённых) и логических x/y
     let newFood;
+    let attempts = 0;
     do {
         newFood = {
             x: Math.floor(Math.random() * tileCount),
             y: Math.floor(Math.random() * tileCount)
         };
-    } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+        attempts++;
+        if (attempts > 500) break; // safety
+    } while (
+        snake.some(segment => {
+            // сравниваем по визуальным позициям (округлённым)
+            const gx = Math.round(segment.posX / gridSize);
+            const gy = Math.round(segment.posY / gridSize);
+            return gx === newFood.x && gy === newFood.y;
+        })
+    );
     food = newFood;
 }
 
@@ -205,7 +210,7 @@ function gameLoop(time) {
     const deltaTime = time - lastTime;
     lastTime = time;
 
-    const speedMsPerCell = parseInt(speedSelector.value);
+    const speedMsPerCell = parseInt(speedSelector.value, 10);
     const pixelsPerMs = gridSize / speedMsPerCell;
     let moveAmount = pixelsPerMs * deltaTime;
 
@@ -218,6 +223,7 @@ function gameLoop(time) {
         const distToNextCell = Math.sqrt(distX * distX + distY * distY);
 
         if (moveAmount >= distToNextCell) {
+            // Доехали до следующей клетки визуально
             headPos.x = Math.round((snake[0].x + direction.x) * gridSize);
             headPos.y = Math.round((snake[0].y + direction.y) * gridSize);
 
@@ -225,12 +231,29 @@ function gameLoop(time) {
             const newY = snake[0].y + direction.y;
             const eating = (newX === food.x && newY === food.y);
 
-            if (checkCollision(newX, newY, !eating)) {
-                logToFile(`[GAME OVER] newX=${newX}, newY=${newY}`, snake);
+            // Проверка границ
+            if (newX < 0 || newX >= tileCount || newY < 0 || newY >= tileCount) {
+                logToFile(`[GAME OVER - BORDER] newX=${newX}, newY=${newY}`);
                 gameOver();
                 return;
             }
 
+            // Проверка столкновения по визуальным позициям (округлённым pos)
+            for (let i = 10; i < snake.length; i++) {
+                if (!eating && i === snake.length - 1) continue; // ignore tail если не едим
+                const seg = snake[i];
+                const segGX = Math.round(seg.posX / gridSize);
+                const segGY = Math.round(seg.posY / gridSize);
+                if (segGX === newX && segGY === newY) {
+                    logToFile(
+                        `[GAME OVER - BODY] segmentIndex=${i}, segGX=${segGX}, segGY=${segGY}, headGX=${newX}, headGY=${newY}`
+                    );
+                    gameOver();
+                    return;
+                }
+            }
+
+            // Добавляем новый сегмент головы (логические координаты в целую клетку, визуальные — позиция клетки)
             snake.unshift({ x: newX, y: newY, posX: newX * gridSize, posY: newY * gridSize });
 
             if (eating) {
@@ -241,24 +264,35 @@ function gameLoop(time) {
                 snake.pop();
             }
 
+            // Применяем queued direction — так управление остаётся отзывчивым
             direction = nextDirection;
             moveAmount -= distToNextCell;
         } else {
+            // Плавно двигаем голову по пикселям (визуальная анимация)
             headPos.x += direction.x * moveAmount;
             headPos.y += direction.y * moveAmount;
             moveAmount = 0;
         }
     }
 
+    // Обновляем визуальную позицию головы
     snake[0].posX = headPos.x;
     snake[0].posY = headPos.y;
 
+    // Плавное "догоняние" для остальных сегментов (как было)
     const followSpeed = 0.2;
     for (let i = 1; i < snake.length; i++) {
         const prev = snake[i - 1];
         const curr = snake[i];
         curr.posX += (prev.posX - curr.posX) * followSpeed;
         curr.posY += (prev.posY - curr.posY) * followSpeed;
+    }
+
+    // Синхронизация логических координат: только для хвоста и сегментов.
+    // Голова уже имеет точные x/y (мы unshift её при достижении новой клетки).
+    for (let i = 1; i < snake.length; i++) {
+        snake[i].x = Math.round(snake[i].posX / gridSize);
+        snake[i].y = Math.round(snake[i].posY / gridSize);
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -276,6 +310,7 @@ document.addEventListener('keydown', (e) => {
     const isRight = code === 'ArrowRight' || code === 'KeyD';
     if (!isUp && !isDown && !isLeft && !isRight) return;
 
+    // Если игра не запущена — устанавливаем направление и стартуем
     if (!isGameRunning) {
         if (isUp) nextDirection = { x: 0, y: -1 };
         else if (isDown) nextDirection = { x: 0, y: 1 };
@@ -285,6 +320,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    // Нормальное управление: запрещаем разворот на 180 градусов по оси
     if (isUp && direction.y === 0) nextDirection = { x: 0, y: -1 };
     else if (isDown && direction.y === 0) nextDirection = { x: 0, y: 1 };
     else if (isLeft && direction.x === 0) nextDirection = { x: -1, y: 0 };
