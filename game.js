@@ -341,7 +341,14 @@ document.addEventListener('keydown', (e) => {
     const isDown = code === 'ArrowDown' || code === 'KeyS';
     const isLeft = code === 'ArrowLeft' || code === 'KeyA';
     const isRight = code === 'ArrowRight' || code === 'KeyD';
+
+    if (isUp || isDown || isLeft || isRight) {
+        e.preventDefault();
+    }
+
     if (!isUp && !isDown && !isLeft && !isRight) return;
+
+    
 
     if (!isGameRunning) {
         if (isUp) nextDirection = { x: 0, y: -1 };
