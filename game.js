@@ -1,7 +1,21 @@
 const { ipcRenderer } = require('electron');
+const fs = require('fs');
+const path = require('path');
+
+// === ЛОГИРОВАНИЕ ===
+const logFilePath = path.join(__dirname, 'snake_debug.log');
+function logToFile(...args) {
+    const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    try {
+        fs.appendFileSync(logFilePath, line, 'utf8');
+    } catch (err) {}
+}
+// ===================
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+
 const scoreElement = document.getElementById('score');
 const startBtn = document.getElementById('startBtn');
 const restartBtn = document.getElementById('restartBtn');
@@ -17,19 +31,10 @@ let direction = { x: 0, y: 0 };
 let nextDirection = { x: 0, y: 0 };
 let score = 0;
 let isGameRunning = false;
-
-// Для анимации радужного цвета змеи
 let hue = 0;
-
-// Позиция головы змеи в пикселях для плавного движения
 let headPos = { x: snake[0].posX, y: snake[0].posY };
+let lastTime = 0;
 
-// Скорость движения змеи в пикселях за кадр
-let speedPixelsPerFrame = 2;
-
-let lastTime = 0; // для регулировки скорости
-
-// Функция рисования скругленного прямоугольника
 function roundRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
@@ -44,7 +49,6 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.closePath();
 }
 
-// Модальное окно для ввода имени
 function showNamePrompt() {
     return new Promise((resolve) => {
         const modal = document.getElementById('nameModal');
@@ -79,11 +83,8 @@ function showNamePrompt() {
         }
 
         function onKeyDown(e) {
-            if (e.key === 'Enter') {
-                onSubmit();
-            } else if (e.key === 'Escape') {
-                onCancel();
-            }
+            if (e.key === 'Enter') onSubmit();
+            else if (e.key === 'Escape') onCancel();
         }
 
         btn.addEventListener('click', onSubmit);
@@ -92,31 +93,28 @@ function showNamePrompt() {
     });
 }
 
-// Рисую сегменты змеи
 function drawSnakeSmooth() {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-
     for (let i = 0; i < snake.length; i++) {
         const segment = snake[i];
         const colorHue = (hue + i * 30) % 360;
+
+        // Отрисовка визуальной позиции (плавной)
         ctx.fillStyle = `hsl(${colorHue}, 100%, 50%)`;
-
-        const x = segment.posX;
-        const y = segment.posY;
-
-        const radius = gridSize / 2;
-        roundRect(ctx, x, y, gridSize, gridSize, radius);
+        roundRect(ctx, segment.posX, segment.posY, gridSize, gridSize, gridSize / 2);
         ctx.fill();
+
+        // Отрисовка фактической позиции (белый полупрозрачный квадрат)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.fillRect(segment.x * gridSize, segment.y * gridSize, gridSize, gridSize);
     }
 }
 
-// Рисуем яблоко
 function drawFood() {
     const centerX = food.x * gridSize + gridSize / 2;
     const centerY = food.y * gridSize + gridSize / 2;
     const radius = (gridSize / 2) * 0.8;
-
     ctx.save();
     ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
     ctx.shadowBlur = 15;
@@ -127,21 +125,27 @@ function drawFood() {
     ctx.restore();
 }
 
-// Проверяем столкновения змеи с собой и стенами
-function checkCollision(newX, newY) {
-    if (
-        newX < 0 || newX >= tileCount ||
-        newY < 0 || newY >= tileCount ||
-        snake.some(segment => segment.x === newX && segment.y === newY)
-    ) {
+logToFile(`[DEBUG] tileCount=${tileCount} gridSize=${gridSize}`);
+
+function checkCollision(newX, newY, ignoreTail = false) {
+    if (newX < 0 || newX >= tileCount || newY < 0 || newY >= tileCount) {
+        logToFile(`[COLLISION BORDER] X=${newX}, Y=${newY}`);
         return true;
+    }
+    for (let i = 10; i < snake.length; i++) {
+        if (ignoreTail && i === snake.length - 1) continue;
+        if (snake[i].x === newX && snake[i].y === newY) {
+            logToFile(
+                `[COLLISION BODY] segmentIndex=${i}, segX=${snake[i].x}, segY=${snake[i].y}, headX=${newX}, headY=${newY}`
+            );
+            return true;
+        }
     }
     return false;
 }
 
 async function gameOver() {
     isGameRunning = false;
-
     const name = await showNamePrompt();
     if (name && name.trim() !== '') {
         const highscores = await ipcRenderer.invoke('save-highscore', { name, score });
@@ -184,7 +188,6 @@ function resetGame() {
 
 function startGame() {
     if (isGameRunning) return;
-
     snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
     direction = nextDirection.x !== 0 || nextDirection.y !== 0 ? nextDirection : { x: 1, y: 0 };
     nextDirection = direction;
@@ -197,73 +200,63 @@ function startGame() {
     requestAnimationFrame(gameLoop);
 }
 
-// Основной игровой цикл с плавным обновлением
 function gameLoop(time) {
     if (!isGameRunning) return;
-
     const deltaTime = time - lastTime;
-    // speedSelector — число миллисекунд на одну клетку
+    lastTime = time;
+
     const speedMsPerCell = parseInt(speedSelector.value);
-    speedPixelsPerFrame = gridSize / (speedMsPerCell / 16);
+    const pixelsPerMs = gridSize / speedMsPerCell;
+    let moveAmount = pixelsPerMs * deltaTime;
 
-    // Двигаю голову змеи плавно
-    headPos.x += direction.x * speedPixelsPerFrame;
-    headPos.y += direction.y * speedPixelsPerFrame;
+    while (moveAmount > 0 && isGameRunning) {
+        const targetX = snake[0].x * gridSize + direction.x * gridSize;
+        const targetY = snake[0].y * gridSize + direction.y * gridSize;
 
-    // Проверяем, достигли ли центр следующей клетки
-    const targetX = snake[0].x * gridSize + direction.x * gridSize;
-    const targetY = snake[0].y * gridSize + direction.y * gridSize;
+        const distX = targetX - headPos.x;
+        const distY = targetY - headPos.y;
+        const distToNextCell = Math.sqrt(distX * distX + distY * distY);
 
-    let reachedNextCell = false;
+        if (moveAmount >= distToNextCell) {
+            headPos.x = Math.round((snake[0].x + direction.x) * gridSize);
+            headPos.y = Math.round((snake[0].y + direction.y) * gridSize);
 
-    // Проверяю по каждой оси, если змейка достаточно близко к следующей клетке
-    if (direction.x !== 0) {
-        if ((direction.x > 0 && headPos.x >= targetX) ||
-            (direction.x < 0 && headPos.x <= targetX)) {
-            reachedNextCell = true;
-        }
-    } else if (direction.y !== 0) {
-        if ((direction.y > 0 && headPos.y >= targetY) ||
-            (direction.y < 0 && headPos.y <= targetY)) {
-            reachedNextCell = true;
-        }
-    }
+            const newX = snake[0].x + direction.x;
+            const newY = snake[0].y + direction.y;
+            const eating = (newX === food.x && newY === food.y);
 
-    if (reachedNextCell) {
-        // Новая клетка змеи
-        const newX = snake[0].x + direction.x;
-        const newY = snake[0].y + direction.y;
+            if (checkCollision(newX, newY, !eating)) {
+                logToFile(`[GAME OVER] newX=${newX}, newY=${newY}`, snake);
+                gameOver();
+                return;
+            }
 
-        if (checkCollision(newX, newY)) {
-            gameOver();
-            return;
-        }
+            snake.unshift({ x: newX, y: newY, posX: newX * gridSize, posY: newY * gridSize });
 
-        // Добавляю новый сегмент головы
-        snake.unshift({ x: newX, y: newY, posX: newX * gridSize, posY: newY * gridSize });
+            if (eating) {
+                score++;
+                scoreElement.textContent = score;
+                generateFood();
+            } else {
+                snake.pop();
+            }
 
-        if (newX === food.x && newY === food.y) {
-            score++;
-            scoreElement.textContent = score;
-            generateFood();
+            direction = nextDirection;
+            moveAmount -= distToNextCell;
         } else {
-            snake.pop();
+            headPos.x += direction.x * moveAmount;
+            headPos.y += direction.y * moveAmount;
+            moveAmount = 0;
         }
-        headPos.x = newX * gridSize;
-        headPos.y = newY * gridSize;
-        direction = nextDirection;
     }
 
-    // Обновляем позицию головы в массиве
     snake[0].posX = headPos.x;
     snake[0].posY = headPos.y;
 
-    // Плавно двигаем остальные сегменты к предыдущим сегментам
     const followSpeed = 0.2;
     for (let i = 1; i < snake.length; i++) {
         const prev = snake[i - 1];
         const curr = snake[i];
-
         curr.posX += (prev.posX - curr.posX) * followSpeed;
         curr.posY += (prev.posY - curr.posY) * followSpeed;
     }
@@ -271,21 +264,16 @@ function gameLoop(time) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawSnakeSmooth();
     drawFood();
-
     hue = (hue + 2) % 360;
-    lastTime = time;
     requestAnimationFrame(gameLoop);
 }
 
-// Управление клавишами с автозапуском игры
 document.addEventListener('keydown', (e) => {
     const code = e.code;
-
     const isUp = code === 'ArrowUp' || code === 'KeyW';
     const isDown = code === 'ArrowDown' || code === 'KeyS';
     const isLeft = code === 'ArrowLeft' || code === 'KeyA';
     const isRight = code === 'ArrowRight' || code === 'KeyD';
-
     if (!isUp && !isDown && !isLeft && !isRight) return;
 
     if (!isGameRunning) {
@@ -293,7 +281,6 @@ document.addEventListener('keydown', (e) => {
         else if (isDown) nextDirection = { x: 0, y: 1 };
         else if (isLeft) nextDirection = { x: -1, y: 0 };
         else if (isRight) nextDirection = { x: 1, y: 0 };
-
         startGame();
         return;
     }
@@ -307,7 +294,6 @@ document.addEventListener('keydown', (e) => {
 startBtn.addEventListener('click', startGame);
 restartBtn.addEventListener('click', resetGame);
 
-// Загрузка рекордов при старте
 window.onload = async () => {
     const highscores = await ipcRenderer.invoke('get-highscores');
     updateHighscoreList(highscores);
