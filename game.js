@@ -28,7 +28,7 @@ const tileCount = Math.floor(canvas.width / gridSize);
 
 // Змейка в начале как спичка — одна клетка
 let snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
-// Кусок еды, пока что один, пока не проглотили
+// Кусок еды
 let food = { x: 5, y: 5 };
 // Куда сейчас ползём
 let direction = { x: 0, y: 0 };
@@ -44,6 +44,8 @@ let hue = 0;
 let headPos = { x: snake[0].posX, y: snake[0].posY };
 // Время прошлого кадра, чтобы знать, сколько прошло
 let lastTime = 0;
+
+let isPromptActive = false;
 
 // Рисуем прямоугольник с закруглениями. Можно и без этого, но будет некрасиво.
 function roundRect(ctx, x, y, width, height, radius) {
@@ -70,6 +72,7 @@ function getDifficultyName() {
 // Показываем модальное окно, где игрок вводит своё имя.
 // Да, оно блокирует игру, потому что так проще.
 function showNamePrompt() {
+    isPromptActive = true;
     return new Promise((resolve) => {
         const modal = document.getElementById('nameModal');
         const overlay = document.getElementById('modalOverlay');
@@ -87,6 +90,7 @@ function showNamePrompt() {
             input.removeEventListener('keydown', onKeyDown);
             modal.style.display = 'none';
             overlay.style.display = 'none';
+            isPromptActive = false;
         }
 
         function onSubmit() {
@@ -330,6 +334,8 @@ function gameLoop(time) {
 
 // Управление. Клавиши-стрелки или WASD, для эстетов.
 document.addEventListener('keydown', (e) => {
+    if (isPromptActive) return;
+
     const code = e.code;
     const isUp = code === 'ArrowUp' || code === 'KeyW';
     const isDown = code === 'ArrowDown' || code === 'KeyS';
