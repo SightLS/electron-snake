@@ -142,6 +142,7 @@ function checkCollision(newX, newY, ignoreTail = false) {
 // Конец игры. Спрашиваем имя, сохраняем в рекорды.
 async function gameOver() {
     isGameRunning = false;
+    speedSelector.disabled = false;
     const name = await showNamePrompt();
     if (name && name.trim() !== '') {
         const highscores = await ipcRenderer.invoke('save-highscore', { name, score });
@@ -183,6 +184,7 @@ function updateHighscoreList(highscores) {
 // Сброс в дефолтное состояние. Всё по-новой.
 function resetGame() {
     isGameRunning = false;
+    speedSelector.disabled = false;
     snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
     direction = { x: 0, y: 0 };
     nextDirection = { x: 0, y: 0 };
@@ -196,6 +198,7 @@ function resetGame() {
 
 // Запуск. Тут всё начинается.
 function startGame() {
+    speedSelector.disabled = true;
     if (isGameRunning) return;
     snake = [{ x: 10, y: 10, posX: 10 * gridSize, posY: 10 * gridSize }];
     direction = nextDirection.x !== 0 || nextDirection.y !== 0 ? nextDirection : { x: 1, y: 0 };
