@@ -1,5 +1,14 @@
 const { ipcRenderer } = require('electron');
 
+['log', 'warn', 'error'].forEach(level => {
+  const original = console[level];
+  console[level] = (...args) => {
+    ipcRenderer.send('renderer-log', { level, args });
+    original.apply(console, args);
+  };
+});
+
+
 // Берём канвас. Это наше поле боя.
 const canvas = document.getElementById('gameCanvas');
 // Берём 2D, потому что 3D тут нафиг не надо
@@ -50,6 +59,13 @@ function roundRect(ctx, x, y, width, height, radius) {
     ctx.quadraticCurveTo(x, y, x + radius, y);
     ctx.closePath();
 }
+function getDifficultyName() {
+    const value = parseInt(speedSelector.value, 10);
+    if (value <= 100) return 'hard';
+    if (value <= 200) return 'medium';
+    return 'easy';
+}
+
 
 // Показываем модальное окно, где игрок вводит своё имя.
 // Да, оно блокирует игру, потому что так проще.
@@ -141,14 +157,30 @@ function checkCollision(newX, newY, ignoreTail = false) {
 
 // Конец игры. Спрашиваем имя, сохраняем в рекорды.
 async function gameOver() {
-    isGameRunning = false;
-    speedSelector.disabled = false;
-    const name = await showNamePrompt();
-    if (name && name.trim() !== '') {
-        const highscores = await ipcRenderer.invoke('save-highscore', { name, score });
-        updateHighscoreList(highscores);
+    try {
+        console.log('gameOver вызван');
+        isGameRunning = false;
+        speedSelector.disabled = false;
+
+        const name = await showNamePrompt();
+        if (name && name.trim() !== '') {
+            const difficulty = getDifficultyName();
+            console.log('Отправка рекорда в main.js:', name, score, difficulty);
+            const highscores = await ipcRenderer.invoke('save-highscore', { 
+                name: name.trim(), 
+                score, 
+                difficulty 
+            });
+            updateHighscoreList(highscores);
+        } else {
+            console.log('Имя не введено, рекорд не сохранён');
+        }
+    } catch (err) {
+        console.error('Ошибка при сохранении рекорда:', err);
     }
 }
+
+
 
 // Ставим еду в случайное место, но не на змейку (ну мы же не звери).
 function generateFood() {
@@ -196,7 +228,7 @@ function resetGame() {
     drawFood();
 }
 
-// Запуск. Тут всё начинается.
+// Запуск
 function startGame() {
     speedSelector.disabled = true;
     if (isGameRunning) return;
@@ -212,7 +244,7 @@ function startGame() {
     requestAnimationFrame(gameLoop);
 }
 
-// Главный цикл. Тут вся магия.
+// Главный цикл
 function gameLoop(time) {
     if (!isGameRunning) return;
     const deltaTime = time - lastTime;
@@ -324,9 +356,17 @@ document.addEventListener('keydown', (e) => {
 startBtn.addEventListener('click', startGame);
 restartBtn.addEventListener('click', resetGame);
 
+speedSelector.addEventListener('change', async () => {
+    const difficulty = getDifficultyName();
+    const highscores = await ipcRenderer.invoke('get-highscores', difficulty);
+    updateHighscoreList(highscores);
+});
+
 // Когда всё загрузилось — подгружаем рекорды и ждём
 window.onload = async () => {
-    const highscores = await ipcRenderer.invoke('get-highscores');
+    const difficulty = getDifficultyName();
+    const highscores = await ipcRenderer.invoke('get-highscores', difficulty);
     updateHighscoreList(highscores);
     resetGame();
 };
+
